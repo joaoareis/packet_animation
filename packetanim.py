@@ -1,14 +1,23 @@
+from gc import get_referents
 import sys
 import pygame
 import numpy as np
-
+import pandas as pd
 pygame.init()
 #pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-FRAMERATE = 30
+FRAMERATE = 60
 SIMSPEED = 5
 size = width, height = 841, 431
 speed = [2, 2]
 BLACK = 0, 0, 0
+RED = 255, 0, 0
+BLUE = 0, 0, 255
+FONT = pygame.font.SysFont('Arial', 15)
+FLOW_COLORS = {
+    0: RED,
+    1: BLUE
+}
+
 
 background = pygame.image.load('jamboard.png')
 
@@ -19,36 +28,42 @@ screen.blit(background, (0,0))
 clock = pygame.time.Clock()
 
 POS = {
-    "node1": (40,40),
-    "node2": (170,130),
-    "node3": (290,130),
-    "node4": (410,130),
-    "node5": (530,130),
-    "node6": (650,130),
-    "node7": (800,40),
-    "node8": (40,400),
-    "node9": (290,300),
-    "node10": (530,300),
-    "node11": (40,800),
+    "1": (40,40),
+    "2": (170,130),
+    "3": (290,130),
+    "4": (410,130),
+    "5": (530,130),
+    "6": (650,130),
+    "7": (800,40),
+    "8": (40,400),
+    "9": (290,300),
+    "10": (530,300),
+    "11": (800,400),
 }
 
 class Packet:
-    def __init__(self) -> None:
-        self.events = [("node1", 1), ("node2", 5), ("node3", 10), ("node4", 12)
-        ,("node5", 15),("node6", 25),("node7", 35),("node6", 40)]
+    def __init__(self, events, flowid, seqnumber, kind) -> None:
+        self.events = events
         self.on = False
         self.curr_event = None
         self.next_event_time = self.events[0][1] 
         self.pos = None
         self.destination_pos = None
+        self.flowid = flowid
+        self.seqnumber = seqnumber
+        self.kind = kind
+
     
     def increment_event(self):
         if self.curr_event is None:
             self.curr_event = -1
 
         self.curr_event+= 1
+        if self.curr_event == len(self.events) - 1:
+            self.curr_event = None
+            self.next_event_time = None
+            return
         self.pos = POS[self.events[self.curr_event][0]]
-        print(self.curr_event)
         self.destination_pos = POS[self.events[self.curr_event+1][0]]
         self.next_event_time = self.events[self.curr_event+1][1]
         time_to_next_event = self.next_event_time - self.events[self.curr_event][1]
@@ -57,8 +72,7 @@ class Packet:
         
         self.rect = self._create_rect(self.pos)
 
-        if self.curr_event + 2 == len(self.events):
-            self.next_event_time = None
+
 
 
     def get_speed(self, prop_delay, pos, destination_pos):
@@ -75,7 +89,7 @@ class Packet:
     
     def _create_rect(self, pos):
         topleft_x, topleft_y = pos
-        p_rect = pygame.Rect(topleft_x, topleft_y, 10, 10)
+        p_rect = pygame.Rect(topleft_x, topleft_y, 20, 20)
         return p_rect
 
     def _delta_pos(self, old_pos, velocity):
@@ -107,11 +121,49 @@ class Packet:
     
     def draw(self, screen):
         if self.curr_event != None:
-            pygame.draw.rect(screen, BLACK, self.rect)
+            if self.kind=="data":
+                rect = pygame.draw.rect(screen, FLOW_COLORS[self.flowid], self.rect, 2)
+            elif self.kind=="retransmission":
+                rect = pygame.draw.rect(screen, FLOW_COLORS[self.flowid], self.rect)
+            elif self.kind=="ack":
+                rect = pygame.draw.circle(screen, FLOW_COLORS[self.flowid], self.rect.topleft, 18, width=2)
+            else:
+                raise ValueError("Kind not valid.", self.kind)
+            text_coord = tuple((np.subtract(rect.center, rect.topleft)/2 + np.array(rect.topleft)).astype(int))
+            screen.blit(FONT.render(str(self.seqnumber), True, BLACK),text_coord)
+
+def create_packets(filename):
+    df = pd.read_csv(filename)
+    df["Node_str"] = df["Node"].astype(str)
+    groups = df.groupby(["flowid", "seq",  "retransmission", "ack"])[["Node_str", "time"]].apply(lambda x: x.values.tolist()).to_dict()
+    packets = list()
+    for (flowid, seq, retransmission, ack), events in groups.items():
+        if ack:
+            kind="ack"
+        else:
+            kind = "data" if retransmission == 0 else "retransmission"
+        packet = Packet(events=events, flowid=flowid, seqnumber=seq,kind=kind)
+        packets.append(packet)
+    
+    return packets
+
+def draw_stats(screen, frame):
+    time_str = f"{get_frame_time(frame):.2f}"
+    surface = pygame.Surface((676,45))
+    surface.fill((255,255,255))
+    surface.blit(FONT.render(time_str, True, BLACK), surface.get_rect().center)
+    screen.blit(surface, (82,20))
+    return surface
     
 
-packet = Packet()
+def get_frame_time(frame):
+    time = frame/(FRAMERATE/SIMSPEED)
+    return time
+
+packets = create_packets("packet_journey.csv")
+
 frame = 0
+frames = list()
 while True:
 
     for event in pygame.event.get():
@@ -119,8 +171,18 @@ while True:
 
 
     screen.blit(background, (0,0))
-    packet.draw(screen)
+    for packet in packets:
+        packet.draw(screen)
+        packet.step(frame)
+
+    draw_stats(screen, frame)
+
+    frames.append(screen.copy())
     pygame.display.flip()
-    packet.step(frame)
     clock.tick_busy_loop(FRAMERATE)
     frame+=1
+    if get_frame_time(frame) > 602:
+        break
+
+for i, frame in enumerate(frames):
+    pygame.image.save(frame, f"frames/frame{i}.jpg")
