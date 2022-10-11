@@ -1,4 +1,4 @@
-from gc import get_referents
+import argparse
 import sys
 import pygame
 import numpy as np
@@ -7,7 +7,7 @@ pygame.init()
 #pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 FRAMERATE = 60
 SIMSPEED = 5
-size = width, height = 841, 431
+SIZE = WIDTH, HEIGHT = 841*2, 431
 speed = [2, 2]
 BLACK = 0, 0, 0
 RED = 255, 0, 0
@@ -18,14 +18,6 @@ FLOW_COLORS = {
     1: BLUE
 }
 
-
-background = pygame.image.load('jamboard.png')
-
-screen = pygame.display.set_mode(size)
-ball = pygame.image.load("intro_ball.gif")
-ballrect = ball.get_rect()
-screen.blit(background, (0,0))
-clock = pygame.time.Clock()
 
 POS = {
     "1": (40,40),
@@ -160,29 +152,51 @@ def get_frame_time(frame):
     time = frame/(FRAMERATE/SIMSPEED)
     return time
 
-packets = create_packets("packet_journey.csv")
-
-frame = 0
-frames = list()
-while True:
-
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT: sys.exit()
-
-
+def set_background(screen, background):
     screen.blit(background, (0,0))
+    screen.blit(background, (WIDTH/2, 0))
+
+def draw_packets(packets, screen, frame):
     for packet in packets:
         packet.draw(screen)
         packet.step(frame)
 
-    draw_stats(screen, frame)
+def main(packet_file):
 
-    frames.append(screen.copy())
-    pygame.display.flip()
-    clock.tick_busy_loop(FRAMERATE)
-    frame+=1
-    if get_frame_time(frame) > 602:
-        break
+    background = pygame.image.load('jamboard.png')
+    screen = pygame.display.set_mode(SIZE)
+    set_background(screen, background)
+    clock = pygame.time.Clock()
 
-for i, frame in enumerate(frames):
-    pygame.image.save(frame, f"frames/frame{i}.jpg")
+    packets = dict()
+    packets["M-R2L"] = create_packets(packet_file)
+    packets["SP"] = create_packets(packet_file)
+
+    frame = 0
+    frames = list()
+    while True:
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT: sys.exit()
+
+        packet_surface = background.copy()
+        draw_packets(packets, packet_surface, frame)
+        set_background(screen, packet_surface)
+
+        draw_stats(screen, frame)
+
+        frames.append(screen.copy())
+        pygame.display.flip()
+        clock.tick_busy_loop(FRAMERATE)
+        frame+=1
+        if get_frame_time(frame) > 602:
+            break
+
+    for i, frame in enumerate(frames):
+        pygame.image.save(frame, f"frames/frame{i}.jpg")
+
+if __name__=="__main__":
+    parser = argparse.ArgumentParser(description='Packet animation')
+    parser.add_argument('-f','--file', help='Description for foo argument', default="packet_journey.csv")
+    args = parser.parse_args()
+    main(args.file)
