@@ -7,12 +7,13 @@ pygame.init()
 #pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 FRAMERATE = 60
 SIMSPEED = 5
-SIZE = WIDTH, HEIGHT = 841*2, 431
+SIZE = WIDTH, HEIGHT = 841*2+100, 431*2+100
 speed = [2, 2]
 BLACK = 0, 0, 0
 RED = 255, 0, 0
 BLUE = 0, 0, 255
-FONT = pygame.font.SysFont('Arial', 15)
+WHITE = 255, 255, 255
+FONT = pygame.font.SysFont('Arial', 20)
 FLOW_COLORS = {
     0: RED,
     1: BLUE
@@ -81,7 +82,7 @@ class Packet:
     
     def _create_rect(self, pos):
         topleft_x, topleft_y = pos
-        p_rect = pygame.Rect(topleft_x, topleft_y, 20, 20)
+        p_rect = pygame.Rect(topleft_x, topleft_y, 25, 25)
         return p_rect
 
     def _delta_pos(self, old_pos, velocity):
@@ -118,7 +119,7 @@ class Packet:
             elif self.kind=="retransmission":
                 rect = pygame.draw.rect(screen, FLOW_COLORS[self.flowid], self.rect)
             elif self.kind=="ack":
-                rect = pygame.draw.circle(screen, FLOW_COLORS[self.flowid], self.rect.topleft, 18, width=2)
+                rect = pygame.draw.circle(screen, FLOW_COLORS[self.flowid], self.rect.topleft, 22, width=2)
             else:
                 raise ValueError("Kind not valid.", self.kind)
             text_coord = tuple((np.subtract(rect.center, rect.topleft)/2 + np.array(rect.topleft)).astype(int))
@@ -127,9 +128,9 @@ class Packet:
 def create_packets(filename):
     df = pd.read_csv(filename)
     df["Node_str"] = df["Node"].astype(str)
-    groups = df.groupby(["flowid", "seq",  "retransmission", "ack"])[["Node_str", "time"]].apply(lambda x: x.values.tolist()).to_dict()
+    groups = df.groupby(["flowid", "seq",  "retransmission", "ack", "ack_to_retransmission"])[["Node_str", "time"]].apply(lambda x: x.values.tolist()).to_dict()
     packets = list()
-    for (flowid, seq, retransmission, ack), events in groups.items():
+    for (flowid, seq, retransmission, ack, _), events in groups.items():
         if ack:
             kind="ack"
         else:
@@ -140,13 +141,24 @@ def create_packets(filename):
     return packets
 
 def draw_stats(screen, frame):
+    font = pygame.font.SysFont('Arial', 30)
     time_str = f"{get_frame_time(frame):.2f}"
-    surface = pygame.Surface((676,45))
-    surface.fill((255,255,255))
-    surface.blit(FONT.render(time_str, True, BLACK), surface.get_rect().center)
-    screen.blit(surface, (82,20))
+    surface = pygame.Surface((WIDTH,60))
+    surface.fill(( 	210, 212, 200))
+    surface.blit(font.render(time_str, True, BLACK), surface.get_rect().center)
+    screen.blit(surface, (0,0))
     return surface
     
+def draw_center_text(screen, text):
+    font = pygame.font.SysFont('Arial', 30)
+    surface = pygame.Surface((270,80))
+    surface.fill(( 	210, 212, 200))
+    frame = 100
+    time_str = f"{get_frame_time(frame):.2f}"
+    surface.blit(font.render(time_str, True, BLACK), surface.get_rect().center)
+    #surface.blit(font.render("AAAAAA", True, BLUE), surface.get_rect().center)
+    screen.blit(surface, (260,180))
+    return surface
 
 def get_frame_time(frame):
     time = frame/(FRAMERATE/SIMSPEED)
@@ -154,9 +166,17 @@ def get_frame_time(frame):
 
 def set_background(screen, background):
     screen.blit(background, (0,0))
-    screen.blit(background, (WIDTH/2, 0))
+    screen.blit(background, (WIDTH/2+100, 0))
 
-def draw_packets(packets, screen, frame):
+def draw_packets(screen, packet_subscreens):
+    if len(packet_subscreens) == 1:
+        screen.blit(packet_subscreens[0], (WIDTH/4,HEIGHT/4))
+
+    elif len(packet_subscreens) == 2:
+        for i, s in enumerate(packet_subscreens):
+            screen.blit(s, (i*WIDTH/2,HEIGHT/4))
+
+def draw_packet_subscreen(packets, screen, frame):
     for packet in packets:
         packet.draw(screen)
         packet.step(frame)
@@ -165,12 +185,13 @@ def main(packet_file):
 
     background = pygame.image.load('jamboard.png')
     screen = pygame.display.set_mode(SIZE)
-    set_background(screen, background)
+    screen.fill(WHITE)
     clock = pygame.time.Clock()
 
     packets = dict()
+
+    packets["SP"] = create_packets("packet_journey_sp.csv")
     packets["M-R2L"] = create_packets(packet_file)
-    packets["SP"] = create_packets(packet_file)
 
     frame = 0
     frames = list()
@@ -179,11 +200,15 @@ def main(packet_file):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: sys.exit()
 
-        packet_surface = background.copy()
-        draw_packets(packets, packet_surface, frame)
-        set_background(screen, packet_surface)
-
+        packet_surfaces = list()
+        for agent, agent_packets in packets.items():
+            packet_surface = background.copy()
+            draw_packet_subscreen(agent_packets, packet_surface, frame)
+            # draw_center_text(packet_surface, "agent")
+            packet_surfaces.append(packet_surface)
+            
         draw_stats(screen, frame)
+        draw_packets(screen, packet_surfaces)
 
         frames.append(screen.copy())
         pygame.display.flip()
@@ -197,6 +222,6 @@ def main(packet_file):
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Packet animation')
-    parser.add_argument('-f','--file', help='Description for foo argument', default="packet_journey.csv")
+    parser.add_argument('-f','--file', help='Description for foo argument', default="packet_journey_sp_double_rto.csv")
     args = parser.parse_args()
     main(args.file)
