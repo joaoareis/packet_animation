@@ -128,6 +128,8 @@ class Packet:
 def create_packets(filename):
     df = pd.read_csv(filename)
     df["Node_str"] = df["Node"].astype(str)
+    if "ack_to_retransmission" not in df.columns:
+        df["ack_to_retransmission"] = 0
     groups = df.groupby(["flowid", "seq",  "retransmission", "ack", "ack_to_retransmission"])[["Node_str", "time"]].apply(lambda x: x.values.tolist()).to_dict()
     packets = list()
     for (flowid, seq, retransmission, ack, _), events in groups.items():
@@ -164,10 +166,6 @@ def get_frame_time(frame):
     time = frame/(FRAMERATE/SIMSPEED)
     return time
 
-def set_background(screen, background):
-    screen.blit(background, (0,0))
-    screen.blit(background, (WIDTH/2+100, 0))
-
 def draw_packets(screen, packet_subscreens):
     if len(packet_subscreens) == 1:
         screen.blit(packet_subscreens[0], (WIDTH/4,HEIGHT/4))
@@ -175,13 +173,18 @@ def draw_packets(screen, packet_subscreens):
     elif len(packet_subscreens) == 2:
         for i, s in enumerate(packet_subscreens):
             screen.blit(s, (i*WIDTH/2,HEIGHT/4))
+    
+    elif len(packet_subscreens) == 3:
+        screen.blit(packet_subscreens[0], (0,60))
+        screen.blit(packet_subscreens[1], (WIDTH/2,60))
+        screen.blit(packet_subscreens[2], (WIDTH/4,HEIGHT/2+60))
 
 def draw_packet_subscreen(packets, screen, frame):
     for packet in packets:
         packet.draw(screen)
         packet.step(frame)
 
-def main(packet_file):
+def main(lb, ml, sp):
 
     background = pygame.image.load('jamboard.png')
     screen = pygame.display.set_mode(SIZE)
@@ -190,8 +193,12 @@ def main(packet_file):
 
     packets = dict()
 
-    packets["SP"] = create_packets("packet_journey_sp.csv")
-    packets["M-R2L"] = create_packets(packet_file)
+    if lb:
+        packets["LB"] = create_packets(lb)
+    if ml:
+        packets["M-R2L"] = create_packets(ml)
+    if sp:
+        packets["SP"] = create_packets(sp)
 
     frame = 0
     frames = list()
@@ -210,18 +217,22 @@ def main(packet_file):
         draw_stats(screen, frame)
         draw_packets(screen, packet_surfaces)
 
-        frames.append(screen.copy())
+        if True:
+            frames.append(screen.copy())
         pygame.display.flip()
         clock.tick_busy_loop(FRAMERATE)
         frame+=1
-        if get_frame_time(frame) > 602:
+        if get_frame_time(frame) > 800:
             break
 
     for i, frame in enumerate(frames):
+        print(i, len(frames))
         pygame.image.save(frame, f"frames/frame{i}.jpg")
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Packet animation')
-    parser.add_argument('-f','--file', help='Description for foo argument', default="packet_journey_sp_double_rto.csv")
+    parser.add_argument('-f','--first', help='Description for foo argument', default=None)
+    parser.add_argument('-s','--second', help='Description for foo argument', default=None)
+    parser.add_argument('-t','--third', help='Description for foo argument', default=None)
     args = parser.parse_args()
-    main(args.file)
+    main(args.first, args.second, args.third)

@@ -1,0 +1,3 @@
+scp ucakjmq@figo.ee.ucl.ac.uk:/home/ucakjmq/experiments/testbox/parsed_logs/*.csv .
+scp ucakjmq@figo.ee.ucl.ac.uk:/home/ucakjmq/experiments/multiagentrlrouting/parsed_logs/*.csv .
+python packetanim.py -f sim_sb_ppo_trained_0.log.journey.csv -s sim_multi_agent_rt_0.log.journey.csv -t sim_shortest_path.log.journey.csv
